@@ -1,0 +1,31 @@
+
+INCLUDE = -I./include ${DENDRO_INCLUDE} ${PETSC_INCLUDE} 
+
+ARCHIVES = 
+
+LIBS = ${DENDRO_LIB} ${PETSC_LIB} 
+
+EXEC = bin/genSphere
+
+all : $(ARCHIVES) $(EXEC)
+
+core : $(ARCHIVES) 
+
+%.o: %.$(CEXT)
+	$(PCC) -c $(CFLAGS) $(INCLUDE) $< -o $@
+
+./src/%.o: ./src/%.$(CEXT)
+	$(PCC) -c $(CFLAGS) $(INCLUDE) $< -o $@
+
+bin/genSphere : ./src/genSphere.o $(ARCHIVES)  
+	$(PCC) $(CFLAGS) $^ -o $@ $(LIBS) 
+
+clean :
+	rm -rf $(EXEC)
+	rm -rf ./src/*.o ./src/*~
+
+clobber : 
+	rm -rf  $(ARCHIVES) $(EXEC)
+	rm -rf ./src/*.o ./src/*~
+
+
