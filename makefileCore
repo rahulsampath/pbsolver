@@ -5,7 +5,7 @@ ARCHIVES =
 
 LIBS = ${DENDRO_LIB} ${PETSC_LIB} 
 
-EXEC = bin/genSphere
+EXEC = bin/genSphere bin/forwardSolver
 
 all : $(ARCHIVES) $(EXEC)
 
@@ -18,6 +18,9 @@ core : $(ARCHIVES)
 	$(PCC) -c $(CFLAGS) $(INCLUDE) $< -o $@
 
 bin/genSphere : ./src/genSphere.o $(ARCHIVES)  
+	$(PCC) $(CFLAGS) $^ -o $@ $(LIBS) 
+
+bin/forwardSolver : ./src/forwardSolver.o $(ARCHIVES)  
 	$(PCC) $(CFLAGS) $^ -o $@ $(LIBS) 
 
 clean :
