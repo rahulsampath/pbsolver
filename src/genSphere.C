@@ -25,6 +25,7 @@ int main(int argc, char** argv) {
   std::vector<double> pts;
 
   int numIntervals = static_cast<int>(floor(sqrt(0.5*static_cast<double>(numPts))));
+  std::cout<<"numIntervals = "<<numIntervals<<std::endl;  
 
   for(int i = 0; i < numIntervals; i++) {
     double u = __PI__*(static_cast<double>(i))/
