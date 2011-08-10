@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
 
   PetscInitialize(&argc, &argv, 0, 0);
   ot::RegisterEvents();
-  //  ot::DAMG_Initialize(MPI_COMM_WORLD);
+  ot::DAMG_Initialize(MPI_COMM_WORLD);
 
   std::vector<double> pts;
   ot::readPtsFromFile(argv[1], pts);
@@ -44,14 +44,14 @@ int main(int argc, char** argv) {
   std::cout<<"balOct size = "<<balOct.size()<<std::endl;
 
   ot::DAMG       *damg;    
-  //  ot::DAMGCreateAndSetDA(MPI_COMM_WORLD, nlevels, NULL, &damg, 
-  //      balOct, dof, mgLoadFac, compressLut, incCorner);
+  ot::DAMGCreateAndSetDA(MPI_COMM_WORLD, nlevels, NULL, &damg, 
+      balOct, dof, mgLoadFac, compressLut, incCorner);
 
-  // ot::PrintDAMG(damg);
+  ot::PrintDAMG(damg);
 
-  //  DAMGDestroy(damg);
+  DAMGDestroy(damg);
 
-  //  ot::DAMG_Finalize();
+  ot::DAMG_Finalize();
   PetscFinalize();
 }
 
