@@ -12,11 +12,23 @@
 #include "dendro.h"
 #include "externVars.h"
 
+namespace ot {
+  extern double**** ShapeFnCoeffs;
+}
+
 void myNewton(ot::DAMG* damg, double fTol, double xTol, 
     int maxIterCnt, Vec sol);
 
 void createGaussPtsAndWts(double*& gPts, double*& gWts, int numGpts);
 void destroyGaussPtsAndWts(double*& gPts, double*& gWts);
+
+void ComputeResidual(ot::DAMG damg, Vec in, Vec out); 
+
+void computeSinhTerm(ot::DAMG damg, Vec in, Vec out);
+
+void computeLaplacianTerm(ot::DAMG damg, Vec in, Vec out);
+
+void computeRobinTerm(ot::DAMG damg, Vec in, Vec out);
 
 int main(int argc, char** argv) {
   bool incCorner = 1;  
@@ -64,7 +76,7 @@ int main(int argc, char** argv) {
   double* gPts;
   double* gWts;
   createGaussPtsAndWts(gPts, gWts, numGpts);
-  
+
   double fTol = 1.0e-10;
   double xTol = 1.0e-10;
   int maxIterCnt = 10;
@@ -104,6 +116,32 @@ void myNewton(ot::DAMG* damg, double fTol, double xTol,
     iterCnt++;
   }
 
+}
+
+void ComputeResidual(ot::DAMG damg, Vec in, Vec out) {
+  Vec sinhTerm;
+  Vec robTerm;
+
+  VecDuplicate(out, &sinhTerm);
+  VecDuplicate(out, &robTerm);
+
+  computeLaplacianTerm(damg, in, out);
+  computeSinhTerm(damg, in, sinhTerm);
+  computeRobinTerm(damg, in, robTerm);
+
+  VecAXPBYPCZ(out, 1.0, -1.0, 1.0, sinhTerm, robTerm);
+
+  VecDestroy(sinhTerm);
+  VecDestroy(robTerm);
+}
+
+void computeSinhTerm(ot::DAMG damg, Vec in, Vec out) {
+}
+
+void computeLaplacianTerm(ot::DAMG damg, Vec in, Vec out) {
+}
+
+void computeRobinTerm(ot::DAMG damg, Vec in, Vec out) {
 }
 
 void createGaussPtsAndWts(double*& gPts, double*& gWts, int numGpts) {
