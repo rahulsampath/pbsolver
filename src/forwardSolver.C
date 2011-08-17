@@ -22,13 +22,13 @@ void myNewton(ot::DAMG* damg, double fTol, double xTol,
 void createGaussPtsAndWts(double*& gPts, double*& gWts, int numGpts);
 void destroyGaussPtsAndWts(double*& gPts, double*& gWts);
 
-void ComputeResidual(ot::DAMG damg, Vec in, Vec out); 
+void ComputeResidual(ot::DAMG damg, double kappa, int numGpts, double* gPts, double* gWts, Vec in, Vec out); 
 
-void computeSinhTerm(ot::DAMG damg, Vec in, Vec out);
+void computeSinhTerm(ot::DAMG damg, double kappa, int numGpts, double* gPts, double* gWts, Vec in, Vec out);
 
-void computeLaplacianTerm(ot::DAMG damg, Vec in, Vec out);
+void computeLaplacianTerm(ot::DAMG damg, int numGpts, double* gPts, double* gWts, Vec in, Vec out);
 
-void computeRobinTerm(ot::DAMG damg, Vec in, Vec out);
+void computeRobinTerm(ot::DAMG damg, int numGpts, double* gPts, double* gWts, Vec in, Vec out);
 
 int main(int argc, char** argv) {
   bool incCorner = 1;  
@@ -77,6 +77,8 @@ int main(int argc, char** argv) {
   double* gWts;
   createGaussPtsAndWts(gPts, gWts, numGpts);
 
+  double kappa = 1.0;
+
   double fTol = 1.0e-10;
   double xTol = 1.0e-10;
   int maxIterCnt = 10;
@@ -118,16 +120,16 @@ void myNewton(ot::DAMG* damg, double fTol, double xTol,
 
 }
 
-void ComputeResidual(ot::DAMG damg, Vec in, Vec out) {
+void ComputeResidual(ot::DAMG damg, double kappa, int numGpts, double* gPts, double* gWts, Vec in, Vec out) {
   Vec sinhTerm;
   Vec robTerm;
 
   VecDuplicate(out, &sinhTerm);
   VecDuplicate(out, &robTerm);
 
-  computeLaplacianTerm(damg, in, out);
-  computeSinhTerm(damg, in, sinhTerm);
-  computeRobinTerm(damg, in, robTerm);
+  computeLaplacianTerm(damg, numGpts, gPts, gWts, in, out);
+  computeSinhTerm(damg, kappa, numGpts, gPts, gWts, in, sinhTerm);
+  computeRobinTerm(damg, numGpts, gPts, gWts, in, robTerm);
 
   VecAXPBYPCZ(out, 1.0, -1.0, 1.0, sinhTerm, robTerm);
 
@@ -135,13 +137,114 @@ void ComputeResidual(ot::DAMG damg, Vec in, Vec out) {
   VecDestroy(robTerm);
 }
 
-void computeSinhTerm(ot::DAMG damg, Vec in, Vec out) {
+void computeSinhTerm(ot::DAMG damg, double kappa, int numGpts, double* gPts, double* gWts, Vec in, Vec out) {
+  ot::DA* da = damg->da;
+  PetscScalar *inarray;
+  PetscScalar *outarray;
+  VecZeroEntries(out);
+  //Nodal, Non-Ghosted, Read-only, 1-dof
+  da->vecGetBuffer(in, inarray, false, false, true, 1);
+
+  //Nodal, Non-Ghosted, Writable, 1-dof
+  da->vecGetBuffer(out, outarray, false, false, false, 1);
+
+  unsigned int maxD;
+  unsigned int balOctmaxD;
+
+  if(da->iAmActive()) {
+    da->ReadFromGhostsBegin<PetscScalar>(inarray, 1);
+    da->ReadFromGhostsEnd<PetscScalar>(inarray);
+
+    maxD = da->getMaxDepth();
+    balOctmaxD = maxD - 1;
+    for(da->init<ot::DA_FLAGS::ALL>();
+        da->curr() < da->end<ot::DA_FLAGS::ALL>();
+        da->next<ot::DA_FLAGS::ALL>())  
+    {
+      Point pt;
+      pt = da->getCurrentOffset();
+      unsigned int idx = da->curr();
+      unsigned levelhere = (da->getLevel(idx) - 1);
+      double hxOct = (double)((double)(1u << (balOctmaxD - levelhere))/(double)(1u << balOctmaxD));
+      double x = (double)(pt.xint())/((double)(1u << (maxD-1)));
+      double y = (double)(pt.yint())/((double)(1u << (maxD-1)));
+      double z = (double)(pt.zint())/((double)(1u << (maxD-1)));
+      double fac = ((hxOct*hxOct*hxOct)/8.0);
+      unsigned int indices[8];
+      da->getNodeIndices(indices); 
+      unsigned char childNum = da->getChildNumber();
+      unsigned char hnMask = da->getHangingNodeIndex(idx);
+      unsigned char elemType = 0;
+      GET_ETYPE_BLOCK(elemType,hnMask,childNum)
+        for(unsigned int j = 0; j < 8; j++) {
+          double integral = 0.0;
+          //Quadrature Rule
+          for(int m = 0; m < numGpts; m++) {
+            for(int n = 0; n < numGpts; n++) {
+              for(int p = 0; p < numGpts; p++) {
+                double xPt = ( (hxOct*(1.0 +gPts[numGpts-2][m])*0.5) + x );
+                double yPt = ( (hxOct*(1.0 + gPts[numGpts-2][n])*0.5) + y );
+                double zPt = ( (hxOct*(1.0 + gPts[numGpts-2][p])*0.5) + z );
+
+                double inVal = 0.0;                
+                for(unsigned int k = 0; k < 8; k++) {
+                  double ShFnVal_k = ( ot::ShapeFnCoeffs[childNum][elemType][k][0] + 
+                      (ot::ShapeFnCoeffs[childNum][elemType][k][1]*gPts[numGpts-2][m]) +
+                      (ot::ShapeFnCoeffs[childNum][elemType][k][2]*gPts[numGpts-2][n]) +
+                      (ot::ShapeFnCoeffs[childNum][elemType][k][3]*gPts[numGpts-2][p]) +
+                      (ot::ShapeFnCoeffs[childNum][elemType][k][4]*gPts[numGpts-2][m]*
+                       gPts[numGpts-2][n]) +
+                      (ot::ShapeFnCoeffs[childNum][elemType][k][5]*gPts[numGpts-2][n]*
+                       gPts[numGpts-2][p]) +
+                      (ot::ShapeFnCoeffs[childNum][elemType][k][6]*gPts[numGpts-2][p]*
+                       gPts[numGpts-2][m]) +
+                      (ot::ShapeFnCoeffs[childNum][elemType][k][7]*gPts[numGpts-2][m]*
+                       gPts[numGpts-2][n]*gPts[numGpts-2][p]) );
+
+                  inVal += (inarray[indices[k]]*ShFnVal_k); 
+                }//end for k
+
+                double rhsVal = kappa*kappa*sinh(inVal);
+
+                double ShFnVal_j = ( ot::ShapeFnCoeffs[childNum][elemType][j][0] + 
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][1]*gPts[numGpts-2][m]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][2]*gPts[numGpts-2][n]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][3]*gPts[numGpts-2][p]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][4]*gPts[numGpts-2][m]*
+                     gPts[numGpts-2][n]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][5]*gPts[numGpts-2][n]*
+                     gPts[numGpts-2][p]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][6]*gPts[numGpts-2][p]*
+                     gPts[numGpts-2][m]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][7]*gPts[numGpts-2][m]*
+                     gPts[numGpts-2][n]*gPts[numGpts-2][p]) );
+
+                integral += (gWts[numGpts-2][m]*gWts[numGpts-2][n]
+                    *gWts[numGpts-2][p]*rhsVal*ShFnVal_j);
+              }//end for p
+            }//end for n
+          }//end for m
+
+          outarray[indices[j]] += (fac*integral);
+        }//end for j
+    }//end ALL loop 
+  }//end if active
+
+  //Nodal, Non-Ghosted, Read-only, 1-dof
+  da->vecRestoreBuffer(in, inarray, false, false, true, 1);
+
+  //Nodal, Non-Ghosted, Writable, 1-dof
+  da->vecRestoreBuffer(out, outarray, false, false, false, 1);
+
 }
 
-void computeLaplacianTerm(ot::DAMG damg, Vec in, Vec out) {
+
+void computeLaplacianTerm(ot::DAMG damg, int numGpts, double* gPts, double* gWts, Vec in, Vec out) {
+  VecZeroEntries(out);
 }
 
-void computeRobinTerm(ot::DAMG damg, Vec in, Vec out) {
+void computeRobinTerm(ot::DAMG damg, int numGpts, double* gPts, double* gWts, Vec in, Vec out) {
+  VecZeroEntries(out);
 }
 
 void createGaussPtsAndWts(double*& gPts, double*& gWts, int numGpts) {
