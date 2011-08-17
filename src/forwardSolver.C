@@ -1,6 +1,7 @@
 
 #include "mpi.h"
 #include "omg.h"
+#include "oda.h"
 #include "TreeNode.h"
 #include "parUtils.h"
 #include "sys.h"
@@ -182,24 +183,24 @@ void computeSinhTerm(ot::DAMG damg, double kappa, int numGpts, double* gPts, dou
           for(int m = 0; m < numGpts; m++) {
             for(int n = 0; n < numGpts; n++) {
               for(int p = 0; p < numGpts; p++) {
-                double xPt = ( (hxOct*(1.0 +gPts[numGpts-2][m])*0.5) + x );
-                double yPt = ( (hxOct*(1.0 + gPts[numGpts-2][n])*0.5) + y );
-                double zPt = ( (hxOct*(1.0 + gPts[numGpts-2][p])*0.5) + z );
+                double xPt = ( (hxOct*(1.0 + gPts[m])*0.5) + x );
+                double yPt = ( (hxOct*(1.0 + gPts[n])*0.5) + y );
+                double zPt = ( (hxOct*(1.0 + gPts[p])*0.5) + z );
 
                 double inVal = 0.0;                
                 for(unsigned int k = 0; k < 8; k++) {
                   double ShFnVal_k = ( ot::ShapeFnCoeffs[childNum][elemType][k][0] + 
-                      (ot::ShapeFnCoeffs[childNum][elemType][k][1]*gPts[numGpts-2][m]) +
-                      (ot::ShapeFnCoeffs[childNum][elemType][k][2]*gPts[numGpts-2][n]) +
-                      (ot::ShapeFnCoeffs[childNum][elemType][k][3]*gPts[numGpts-2][p]) +
-                      (ot::ShapeFnCoeffs[childNum][elemType][k][4]*gPts[numGpts-2][m]*
-                       gPts[numGpts-2][n]) +
-                      (ot::ShapeFnCoeffs[childNum][elemType][k][5]*gPts[numGpts-2][n]*
-                       gPts[numGpts-2][p]) +
-                      (ot::ShapeFnCoeffs[childNum][elemType][k][6]*gPts[numGpts-2][p]*
-                       gPts[numGpts-2][m]) +
-                      (ot::ShapeFnCoeffs[childNum][elemType][k][7]*gPts[numGpts-2][m]*
-                       gPts[numGpts-2][n]*gPts[numGpts-2][p]) );
+                      (ot::ShapeFnCoeffs[childNum][elemType][k][1]*gPts[m]) +
+                      (ot::ShapeFnCoeffs[childNum][elemType][k][2]*gPts[n]) +
+                      (ot::ShapeFnCoeffs[childNum][elemType][k][3]*gPts[p]) +
+                      (ot::ShapeFnCoeffs[childNum][elemType][k][4]*gPts[m]*
+                       gPts[n]) +
+                      (ot::ShapeFnCoeffs[childNum][elemType][k][5]*gPts[n]*
+                       gPts[p]) +
+                      (ot::ShapeFnCoeffs[childNum][elemType][k][6]*gPts[p]*
+                       gPts[m]) +
+                      (ot::ShapeFnCoeffs[childNum][elemType][k][7]*gPts[m]*
+                       gPts[n]*gPts[p]) );
 
                   inVal += (inarray[indices[k]]*ShFnVal_k); 
                 }//end for k
@@ -207,20 +208,20 @@ void computeSinhTerm(ot::DAMG damg, double kappa, int numGpts, double* gPts, dou
                 double rhsVal = kappa*kappa*sinh(inVal);
 
                 double ShFnVal_j = ( ot::ShapeFnCoeffs[childNum][elemType][j][0] + 
-                    (ot::ShapeFnCoeffs[childNum][elemType][j][1]*gPts[numGpts-2][m]) +
-                    (ot::ShapeFnCoeffs[childNum][elemType][j][2]*gPts[numGpts-2][n]) +
-                    (ot::ShapeFnCoeffs[childNum][elemType][j][3]*gPts[numGpts-2][p]) +
-                    (ot::ShapeFnCoeffs[childNum][elemType][j][4]*gPts[numGpts-2][m]*
-                     gPts[numGpts-2][n]) +
-                    (ot::ShapeFnCoeffs[childNum][elemType][j][5]*gPts[numGpts-2][n]*
-                     gPts[numGpts-2][p]) +
-                    (ot::ShapeFnCoeffs[childNum][elemType][j][6]*gPts[numGpts-2][p]*
-                     gPts[numGpts-2][m]) +
-                    (ot::ShapeFnCoeffs[childNum][elemType][j][7]*gPts[numGpts-2][m]*
-                     gPts[numGpts-2][n]*gPts[numGpts-2][p]) );
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][1]*gPts[m]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][2]*gPts[n]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][3]*gPts[p]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][4]*gPts[m]*
+                     gPts[n]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][5]*gPts[n]*
+                     gPts[p]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][6]*gPts[p]*
+                     gPts[m]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][7]*gPts[m]*
+                     gPts[n]*gPts[p]) );
 
-                integral += (gWts[numGpts-2][m]*gWts[numGpts-2][n]
-                    *gWts[numGpts-2][p]*rhsVal*ShFnVal_j);
+                integral += (gWts[m]*gWts[n]
+                    *gWts[p]*rhsVal*ShFnVal_j);
               }//end for p
             }//end for n
           }//end for m
