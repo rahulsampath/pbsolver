@@ -25,11 +25,11 @@ void destroyGaussPtsAndWts(double*& gPts, double*& gWts);
 
 void ComputeResidual(ot::DAMG damg, double kappa, int numGpts, double* gPts, double* gWts, Vec in, Vec out); 
 
-void computeSinhTerm(ot::DAMG damg, double kappa, int numGpts, double* gPts, double* gWts, Vec in, Vec out);
+void computeSinhTerm(ot::DA* da, double kappa, int numGpts, double* gPts, double* gWts, Vec in, Vec out);
 
-void computeLaplacianTerm(ot::DAMG damg, int numGpts, double* gPts, double* gWts, Vec in, Vec out);
+void computeLaplacianTerm(ot::DA* da, int numGpts, double* gPts, double* gWts, Vec in, Vec out);
 
-void computeRobinTerm(ot::DAMG damg, int numGpts, double* gPts, double* gWts, Vec in, Vec out);
+void computeRobinTerm(ot::DA* da, int numGpts, double* gPts, double* gWts, Vec in, Vec out);
 
 int main(int argc, char** argv) {
   bool incCorner = 1;  
@@ -128,9 +128,11 @@ void ComputeResidual(ot::DAMG damg, double kappa, int numGpts, double* gPts, dou
   VecDuplicate(out, &sinhTerm);
   VecDuplicate(out, &robTerm);
 
-  computeLaplacianTerm(damg, numGpts, gPts, gWts, in, out);
-  computeSinhTerm(damg, kappa, numGpts, gPts, gWts, in, sinhTerm);
-  computeRobinTerm(damg, numGpts, gPts, gWts, in, robTerm);
+  ot::DA* da = damg->da;
+
+  computeLaplacianTerm(da, numGpts, gPts, gWts, in, out);
+  computeSinhTerm(da, kappa, numGpts, gPts, gWts, in, sinhTerm);
+  computeRobinTerm(da, numGpts, gPts, gWts, in, robTerm);
 
   VecAXPBYPCZ(out, 1.0, -1.0, 1.0, sinhTerm, robTerm);
 
@@ -138,8 +140,7 @@ void ComputeResidual(ot::DAMG damg, double kappa, int numGpts, double* gPts, dou
   VecDestroy(robTerm);
 }
 
-void computeSinhTerm(ot::DAMG damg, double kappa, int numGpts, double* gPts, double* gWts, Vec in, Vec out) {
-  ot::DA* da = damg->da;
+void computeSinhTerm(ot::DA* da, double kappa, int numGpts, double* gPts, double* gWts, Vec in, Vec out) {
   PetscScalar *inarray;
   PetscScalar *outarray;
   VecZeroEntries(out);
@@ -222,15 +223,85 @@ void computeSinhTerm(ot::DAMG damg, double kappa, int numGpts, double* gPts, dou
 
   //Nodal, Non-Ghosted, Writable, 1-dof
   da->vecRestoreBuffer(out, outarray, false, false, false, 1);
-
 }
 
 
-void computeLaplacianTerm(ot::DAMG damg, int numGpts, double* gPts, double* gWts, Vec in, Vec out) {
+void computeLaplacianTerm(ot::DA* da, int numGpts, double* gPts, double* gWts, Vec in, Vec out) {
+  PetscScalar *inarray;
+  PetscScalar *outarray;
   VecZeroEntries(out);
+  //Nodal, Non-Ghosted, Read-only, 1-dof
+  da->vecGetBuffer(in, inarray, false, false, true, 1);
+
+  //Nodal, Non-Ghosted, Writable, 1-dof
+  da->vecGetBuffer(out, outarray, false, false, false, 1);
+
+  unsigned int maxD;
+  unsigned int balOctmaxD;
+
+  if(da->iAmActive()) {
+    da->ReadFromGhostsBegin<PetscScalar>(inarray, 1);
+    da->ReadFromGhostsEnd<PetscScalar>(inarray);
+
+    maxD = da->getMaxDepth();
+    balOctmaxD = maxD - 1;
+    for(da->init<ot::DA_FLAGS::ALL>();
+        da->curr() < da->end<ot::DA_FLAGS::ALL>();
+        da->next<ot::DA_FLAGS::ALL>())  
+    {
+      unsigned int idx = da->curr();
+      unsigned levelhere = (da->getLevel(idx) - 1);
+      double hxOct = (double)((double)(1u << (balOctmaxD - levelhere))/(double)(1u << balOctmaxD));
+      double fac = (hxOct/2.0);
+      unsigned int indices[8];
+      da->getNodeIndices(indices); 
+      unsigned char childNum = da->getChildNumber();
+      unsigned char hnMask = da->getHangingNodeIndex(idx);
+      unsigned char elemType = 0;
+      GET_ETYPE_BLOCK(elemType,hnMask,childNum)
+        //Quadrature Rule
+        for(int m = 0; m < numGpts; m++) {
+          for(int n = 0; n < numGpts; n++) {
+            for(int p = 0; p < numGpts; p++) {
+              double gradPhi[8][3];
+              for(int j = 0; j < 8; j++) {
+                gradPhi[j][0] = ( (ot::ShapeFnCoeffs[childNum][elemType][j][1]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][4]*gPts[n]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][6]*gPts[p]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][7]*gPts[n]*gPts[p]) );
+
+                gradPhi[j][1] = ( (ot::ShapeFnCoeffs[childNum][elemType][j][2]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][4]*gPts[m]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][5]*gPts[p]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][7]*gPts[m]*gPts[p]) );
+
+                gradPhi[j][2] = ( (ot::ShapeFnCoeffs[childNum][elemType][j][3]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][5]*gPts[n]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][6]*gPts[m]) +
+                    (ot::ShapeFnCoeffs[childNum][elemType][j][7]*gPts[m]*gPts[n]) );
+              }//end for j
+              for(int j = 0; j < 8; j++) {
+                for(int i = 0; i < 8; i++) {
+                  outarray[indices[j]] += (gWts[m]*gWts[n]*gWts[p]*fac*inarray[indices[i]]*(
+                        (gradPhi[i][0]*gradPhi[j][0]) + 
+                        (gradPhi[i][1]*gradPhi[j][1]) + 
+                        (gradPhi[i][2]*gradPhi[j][2]) ));
+                }//end for i
+              }//end for j
+            }//end for p
+          }//end for n
+        }//end for m
+    }//end ALL loop 
+  }//end if active
+
+  //Nodal, Non-Ghosted, Read-only, 1-dof
+  da->vecRestoreBuffer(in, inarray, false, false, true, 1);
+
+  //Nodal, Non-Ghosted, Writable, 1-dof
+  da->vecRestoreBuffer(out, outarray, false, false, false, 1);
 }
 
-void computeRobinTerm(ot::DAMG damg, int numGpts, double* gPts, double* gWts, Vec in, Vec out) {
+void computeRobinTerm(ot::DA* da, int numGpts, double* gPts, double* gWts, Vec in, Vec out) {
   VecZeroEntries(out);
 }
 
